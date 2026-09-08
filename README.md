@@ -32,7 +32,7 @@ npm install
 npm run dev
 ```
 
-浏览器打开终端里提示的地址即可。`npm install` 会自动解开游戏素材。
+浏览器打开终端里提示的地址即可。`npm install` 会自动解开 `packed/` 里的游戏素材到 `public/game/`。
 
 ```bash
 npm run build
@@ -40,6 +40,28 @@ npm run preview
 ```
 
 进度存在浏览器 localStorage，刷新不会丢。
+
+## 源码结构
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/game/sim.ts` | 物理、碰撞、踩踏、土狼时间、跳跃缓冲 |
+| `src/game/const.ts` | 跳跃高度、重力、速度、生命、计时 |
+| `src/game/levels.ts` | 三关瓦片地图 |
+| `src/game/render.ts` | 相机、视差、精灵绘制 |
+| `src/game/input.ts` | 键盘、手柄、触控 |
+| `src/game/game.ts` | 主循环、开局 / 暂停 / 死亡 / 通关 |
+| `src/game/audio.ts` | 程序化 Web Audio 音效 |
+| `src/game/save.ts` | localStorage 进度 |
+| `src/components/game-view.tsx` | 标题、HUD、暂停、触控按钮 |
+| `public/game/` | 精灵、瓦片、背景图 |
+| `packed/` | 素材打包（gzip + base64 分片） |
+
+改过图片后重新打包：
+
+```bash
+npm run pack:assets
+```
 
 ## 技术
 

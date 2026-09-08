@@ -146,6 +146,7 @@ function level2(): LevelDef {
     set(55, 12, "E");
     coins(57, 12, 3);
 
+    // high honey
     plat(64, 7, 3);
     set(65, 6, "H");
     set(66, 4, "*");
@@ -209,6 +210,7 @@ function level3(): LevelDef {
     set(26, 12, "E");
     set(22, 6, "F");
 
+    // gauntlet pit
     plat(30, 13, 24, "S");
     plat(32, 10, 2, "^");
     plat(36, 8, 3, "^");

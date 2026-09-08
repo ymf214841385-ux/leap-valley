@@ -21,6 +21,7 @@ function readOctal(s) {
 }
 
 let offset = 0;
+let count = 0;
 while (offset + 512 <= tar.length) {
   const header = tar.subarray(offset, offset + 512);
   const name = header.subarray(0, 100).toString("utf8").replace(/\0/g, "").trim();
@@ -34,6 +35,7 @@ while (offset + 512 <= tar.length) {
     const dest = join(root, name);
     mkdirSync(dirname(dest), { recursive: true });
     writeFileSync(dest, data);
+    count += 1;
   }
 }
-console.log("unpacked game assets");
+console.log(`unpacked ${count} game assets`);

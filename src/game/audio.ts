@@ -113,15 +113,24 @@ export class GameAudio {
     };
   }
 
-  jump() { this.beep(420 + Math.random() * 18, 0.09, "square", 0.075, 180); }
+  jump() {
+    this.beep(420 + Math.random() * 18, 0.09, "square", 0.075, 180);
+  }
   coin(streak = 1) {
     const bump = Math.min(7, streak - 1) * 40;
     this.beep(980 + bump, 0.06, "square", 0.065);
     this.beep(1320 + bump, 0.1, "square", 0.055, 0, 0.04);
   }
-  stomp() { this.noise(0.08, 0.16); this.beep(180, 0.1, "triangle", 0.09, -80); }
-  bump() { this.beep(160, 0.06, "square", 0.055); }
-  hurt() { this.beep(320, 0.18, "sawtooth", 0.085, -200); }
+  stomp() {
+    this.noise(0.08, 0.16);
+    this.beep(180, 0.1, "triangle", 0.09, -80);
+  }
+  bump() {
+    this.beep(160, 0.06, "square", 0.055);
+  }
+  hurt() {
+    this.beep(320, 0.18, "sawtooth", 0.085, -200);
+  }
   power() {
     this.beep(523, 0.08, "square", 0.065);
     this.beep(659, 0.1, "square", 0.065, 0, 0.08);
@@ -137,9 +146,15 @@ export class GameAudio {
     this.beep(784, 0.12, "triangle", 0.07, 0, 0.24);
     this.beep(1046, 0.28, "triangle", 0.09, 0, 0.36);
   }
-  death() { this.beep(300, 0.35, "sawtooth", 0.075, -220); }
-  land() { this.noise(0.04, 0.07); }
-  glide() { this.beep(520, 0.14, "triangle", 0.045, -60); }
+  death() {
+    this.beep(300, 0.35, "sawtooth", 0.075, -220);
+  }
+  land() {
+    this.noise(0.04, 0.07);
+  }
+  glide() {
+    this.beep(520, 0.14, "triangle", 0.045, -60);
+  }
   secret() {
     this.beep(740, 0.1, "square", 0.06);
     this.beep(980, 0.16, "triangle", 0.07, 0, 0.08);
@@ -177,6 +192,9 @@ export class GameAudio {
     g.connect(this.music);
     osc.start(t);
     osc.stop(t + 0.28);
-    osc.onended = () => { osc.disconnect(); g.disconnect(); };
+    osc.onended = () => {
+      osc.disconnect();
+      g.disconnect();
+    };
   }
 }

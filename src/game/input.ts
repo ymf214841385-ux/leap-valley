@@ -146,6 +146,7 @@ export class Input {
     return v;
   }
 
+  /** @deprecated edge is latched; use pollHeld + consumeJump */
   poll(): Actions {
     const held = this.pollHeld();
     return {
