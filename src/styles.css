@@ -40,7 +40,7 @@
 
   html,
   body,
-  #app {
+  #root {
     height: 100%;
   }
 
