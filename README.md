@@ -32,10 +32,11 @@ npm install
 npm run dev
 ```
 
-浏览器打开终端里提示的地址即可。
+浏览器打开终端里提示的地址即可。`npm install` 会自动解开游戏素材。
 
 ```bash
 npm run build
+npm run preview
 ```
 
 进度存在浏览器 localStorage，刷新不会丢。
@@ -43,5 +44,5 @@ npm run build
 ## 技术
 
 - Canvas 2D + 固定时间步物理
-- React 19 / TanStack Start / Tailwind CSS v4
+- React 19 / Vite / Tailwind CSS v4 / Zustand
 - 素材为原创绘制，没有任天堂版权内容
