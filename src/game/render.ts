@@ -1,5 +1,6 @@
 import type { GameImages } from "./assets";
 import { PLAYER_DRAW, PLAYER_H, PLAYER_W, TILE, VIEW_H, VIEW_W } from "./const";
+import { prefersReducedMotion } from "./motion";
 import type { World } from "./sim";
 
 function drawImg(
@@ -32,22 +33,6 @@ function isFill(ch: string) {
   return ch === "#" || ch === "=" || ch === "L" || ch === "B" || ch === "?" || ch === "!" || ch === "U" || ch === ".";
 }
 
-function repeatX(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-) {
-  let ox = 0;
-  while (ox < w) {
-    const dw = Math.min(img.width, w - ox);
-    ctx.drawImage(img, 0, 0, dw, img.height, x + ox, y, dw, h);
-    ox += dw;
-  }
-}
-
 function fillPat(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -58,13 +43,113 @@ function fillPat(
 ) {
   const pw = img.width;
   const ph = img.height;
-  for (let oy = 0; oy < h; oy += ph) {
-    for (let ox = 0; ox < w; ox += pw) {
-      const dw = Math.min(pw, w - ox);
-      const dh = Math.min(ph, h - oy);
-      ctx.drawImage(img, 0, 0, dw, dh, x + ox, y + oy, dw, dh);
+  if (pw <= 0 || ph <= 0 || w <= 0 || h <= 0) return;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = x0 + Math.ceil(w);
+  const y1 = y0 + Math.ceil(h);
+  const startPx = Math.floor(x0 / pw) * pw;
+  const startPy = Math.floor(y0 / ph) * ph;
+  for (let py = startPy; py < y1; py += ph) {
+    for (let px = startPx; px < x1; px += pw) {
+      const dx = Math.max(px, x0);
+      const dy = Math.max(py, y0);
+      const dw = Math.min(px + pw, x1) - dx;
+      const dh = Math.min(py + ph, y1) - dy;
+      if (dw <= 0 || dh <= 0) continue;
+      ctx.drawImage(img, dx - px, dy - py, dw, dh, dx, dy, dw, dh);
     }
   }
+}
+
+function drawGinkgoLeaf(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  rot: number,
+  fill: string,
+  stem = true,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.scale(scale, scale);
+  if (stem) {
+    ctx.strokeStyle = "#6b5344";
+    ctx.lineWidth = 1.15;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, 11);
+    ctx.quadraticCurveTo(-0.6, 5, 0, 0);
+    ctx.stroke();
+  }
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(10, -2, 16, -8, 15, -17);
+  ctx.quadraticCurveTo(8, -15, 3, -20);
+  ctx.lineTo(0, -13);
+  ctx.lineTo(-3, -20);
+  ctx.quadraticCurveTo(-8, -15, -15, -17);
+  ctx.bezierCurveTo(-16, -8, -10, -2, 0, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(90, 58, 22, 0.38)";
+  ctx.lineWidth = 0.7;
+  const veins = [-0.85, -0.42, 0, 0.42, 0.85];
+  for (const a of veins) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(a * 5, -8, Math.sin(a) * 13, -16.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawGlideCanopy(ctx: CanvasRenderingContext2D, px: number, py: number, facing: number, now: number) {
+  const calm = prefersReducedMotion();
+  const sway = calm ? 0 : Math.sin(now * 3.2) * 0.12;
+  const bob = calm ? 0 : Math.sin(now * 4.1) * 1.2;
+  const cx = px + PLAYER_W / 2;
+  const cy = py - 4 + bob;
+  drawGinkgoLeaf(ctx, cx + facing * 2, cy + 2, 1.05, sway * 0.4, "#d7c35a");
+  drawGinkgoLeaf(ctx, cx - 7, cy + 1, 0.78, -0.55 + sway, "#c4b14a");
+  drawGinkgoLeaf(ctx, cx + 7, cy + 1, 0.78, 0.55 + sway, "#e2cf6a");
+}
+
+function drawSecretLeaf(ctx: CanvasRenderingContext2D, x: number, y: number, now: number) {
+  const calm = prefersReducedMotion();
+  const rot = calm ? -0.2 : Math.sin(now * 2.4) * 0.18 - 0.15;
+  const glow = calm ? 0.55 : 0.45 + Math.sin(now * 3.2) * 0.12;
+  ctx.save();
+  ctx.globalAlpha = glow;
+  ctx.fillStyle = "rgba(233, 188, 74, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(x + 10, y + 12, 11, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  drawGinkgoLeaf(ctx, x + 10, y + 16, 1.05, rot, "#e9bc4a");
+}
+
+function drawHoneyShield(ctx: CanvasRenderingContext2D, px: number, py: number, now: number) {
+  const cx = px + PLAYER_W / 2;
+  const cy = py + PLAYER_H / 2;
+  const calm = prefersReducedMotion();
+  const pulse = calm ? 0.42 : 0.38 + Math.sin(now * 4) * 0.08;
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.strokeStyle = "rgba(196, 140, 48, 0.9)";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, PLAYER_W * 0.86, PLAYER_H * 0.72, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 236, 190, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, PLAYER_W * 0.7, PLAYER_H * 0.58, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function parallax(ctx: CanvasRenderingContext2D, img: HTMLImageElement, camX: number, factor: number, y: number, h: number) {
@@ -118,24 +203,22 @@ export function renderWorld(
   const ty1 = Math.min(world.h - 1, Math.ceil((camY + VIEW_H) / TILE) + 1);
 
   for (let ty = ty0; ty <= ty1; ty++) {
-    let tx = tx0;
-    while (tx <= tx1) {
-      const ch0 = tileAt(world, tx, ty);
-      if (ch0 !== "#" && ch0 !== "=") {
-        tx += 1;
-        continue;
-      }
-      const start = tx;
-      while (tx <= tx1 && (tileAt(world, tx, ty) === "#" || tileAt(world, tx, ty) === "=")) tx += 1;
-      const x = start * TILE;
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const ch = tileAt(world, tx, ty);
+      if (ch !== "#" && ch !== "=") continue;
+      const x = tx * TILE;
       const y = ty * TILE;
-      const w = (tx - start) * TILE;
-      fillPat(ctx, images.dirtFill, x, y, w, TILE);
-      const top = !isFill(tileAt(world, start, ty - 1));
-      if (top) repeatX(ctx, images.grassCap, x, y - 10, w, 22);
+      fillPat(ctx, images.dirtFill, x, y, TILE, TILE);
+      if (!isFill(tileAt(world, tx, ty - 1))) {
+        ctx.fillStyle = "rgba(126, 158, 72, 0.55)";
+        ctx.fillRect(x, y, TILE, 5);
+        ctx.fillStyle = "rgba(214, 196, 96, 0.38)";
+        ctx.fillRect(x, y, TILE, 2);
+        fillPat(ctx, images.grassCap, x, y - 10, TILE, 22);
+      }
       ctx.fillStyle = "rgba(40, 28, 20, 0.28)";
-      if (!isFill(tileAt(world, start - 1, ty))) ctx.fillRect(x, y, 3, TILE);
-      if (!isFill(tileAt(world, tx, ty))) ctx.fillRect(x + w - 3, y, 3, TILE);
+      if (!isFill(tileAt(world, tx - 1, ty))) ctx.fillRect(x, y, 3, TILE);
+      if (!isFill(tileAt(world, tx + 1, ty))) ctx.fillRect(x + TILE - 3, y, 3, TILE);
     }
   }
 
@@ -170,7 +253,7 @@ export function renderWorld(
   }
 
   for (const lamp of world.lanterns) {
-    const pulse = 0.55 + Math.sin(now * 3 + lamp.x) * 0.15;
+    const pulse = prefersReducedMotion() ? 0.6 : 0.55 + Math.sin(now * 3 + lamp.x) * 0.15;
     ctx.save();
     ctx.globalAlpha = pulse;
     ctx.fillStyle = "#E9BC4A";
@@ -189,14 +272,7 @@ export function renderWorld(
       const fr = images.acorn[Math.floor(now * 8) % images.acorn.length];
       drawImg(ctx, fr, item.x, item.y, 16, 16);
     } else if (item.kind === "secret") {
-      ctx.save();
-      ctx.globalAlpha = 0.55 + Math.sin(now * 5) * 0.2;
-      ctx.fillStyle = "#E9BC4A";
-      ctx.beginPath();
-      ctx.ellipse(item.x + 10, item.y + 10, 12, 10, now, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      drawImg(ctx, images.honey, item.x, item.y, 18, 22);
+      drawSecretLeaf(ctx, item.x, item.y, now);
     } else if (item.kind === "honey") {
       drawImg(ctx, images.honey, item.x, item.y, 20, 24);
     } else {
@@ -235,17 +311,10 @@ export function renderWorld(
       }
       fr = frames[Math.floor(p.anim * speed) % frames.length];
     }
-    const sw = 32 * PLAYER_DRAW * (p.gliding ? 1.28 : 1) * (2 - p.squash);
-    const sh = 36 * PLAYER_DRAW * (p.gliding ? 0.86 : 1) * p.squash;
-    if (world.hasHoney) {
-      ctx.save();
-      ctx.globalAlpha = 0.35 + Math.sin(now * 6) * 0.1;
-      ctx.fillStyle = "#E9BC4A";
-      ctx.beginPath();
-      ctx.ellipse(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, sw * 0.42, sh * 0.42, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
+    const sw = 32 * PLAYER_DRAW * (2 - p.squash);
+    const sh = 36 * PLAYER_DRAW * p.squash;
+    if (world.hasHoney) drawHoneyShield(ctx, p.x, p.y, now);
+    if (p.gliding) drawGlideCanopy(ctx, p.x, p.y, p.facing, now);
     drawImg(
       ctx,
       fr,
@@ -285,16 +354,21 @@ export function renderWorld(
 }
 
 export function renderTitleIdle(ctx: CanvasRenderingContext2D, images: GameImages, t: number) {
+  const calm = prefersReducedMotion();
+  const drift = calm ? 0 : t;
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(images.sky, 0, 0, VIEW_W, VIEW_H);
-  parallax(ctx, images.far, t * 10, 1, 16, VIEW_H);
-  parallax(ctx, images.mid, t * 22, 1, 24, VIEW_H - 8);
-  for (let x = 0; x < VIEW_W; x += 128) {
-    ctx.drawImage(images.dirtFill, x, VIEW_H - 40, 128, 40);
-  }
-  repeatX(ctx, images.grassCap, 0, VIEW_H - 56, VIEW_W, 22);
-  const bob = Math.sin(t * 2.4) * 3;
-  const hat = Math.sin(t * 1.6) * 1.5;
-  const fr = images.pipIdle[Math.floor(t * 5) % images.pipIdle.length];
-  drawImg(ctx, fr, VIEW_W * 0.5 - 40, VIEW_H - 56 - 78 + bob + hat, 80, 88);
+  parallax(ctx, images.far, drift * 10, 1, 16, VIEW_H);
+  parallax(ctx, images.mid, drift * 22, 1, 24, VIEW_H - 8);
+  fillPat(ctx, images.dirtFill, 0, VIEW_H - 40, VIEW_W, 40);
+  ctx.fillStyle = "rgba(126, 158, 72, 0.5)";
+  ctx.fillRect(0, VIEW_H - 40, VIEW_W, 5);
+  fillPat(ctx, images.grassCap, 0, VIEW_H - 56, VIEW_W, 22);
+  const bob = calm ? 0 : Math.sin(t * 2.4) * 3;
+  const hat = calm ? 0 : Math.sin(t * 1.6) * 1.5;
+  const fr = images.pipIdle[Math.floor((calm ? 0 : t) * 5) % images.pipIdle.length];
+  const pipX = VIEW_W * 0.62 - 40;
+  const pipY = VIEW_H - 56 - 78 + bob + hat;
+  drawImg(ctx, fr, pipX, pipY, 80, 88);
+  drawGinkgoLeaf(ctx, pipX + 48, pipY + 10, 1.15, calm ? -0.2 : Math.sin(t * 1.8) * 0.08 - 0.15, "#e2cf6a");
 }

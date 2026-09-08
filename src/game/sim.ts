@@ -27,6 +27,7 @@ import {
 import type { Actions } from "./input";
 import type { LevelDef, MoverDef } from "./levels";
 import { LEVELS } from "./levels";
+import { prefersReducedMotion } from "./motion";
 
 export type EnemyKind = "beetle" | "moth" | "spiky";
 
@@ -111,8 +112,10 @@ export type Snapshot = {
   maxAirJumps: number;
   time: number;
   grid: string[];
-  pickupTaken: boolean[];
-  enemies: { alive: boolean; x: number; y: number; vx: number; homeY: number }[];
+  pickups: Pickup[];
+  enemies: Enemy[];
+  movers: { t: number; vx: number; vy: number }[];
+  nextPickupId: number;
 };
 
 export type World = {
@@ -157,6 +160,9 @@ export type World = {
   secretTotal: number;
   coinTotal: number;
   glideSeen: boolean;
+  nextPickupId: number;
+  livesAwarded: number;
+  livesAwardedSinceSnap: number;
 };
 
 const SOLID = new Set(["#", "=", "B", "L", "?", "!", "U", "."]);
@@ -176,6 +182,35 @@ function setCell(grid: string[], tx: number, ty: number, ch: string) {
 
 function isSolid(ch: string): boolean {
   return SOLID.has(ch);
+}
+
+export function countFiniteCoins(grid: string[]): number {
+  let n = 0;
+  for (const row of grid) {
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === "C" || ch === "?") n += 1;
+    }
+  }
+  return n;
+}
+
+function clonePickup(p: Pickup): Pickup {
+  return { ...p };
+}
+
+function cloneEnemy(e: Enemy): Enemy {
+  return { ...e };
+}
+
+export function livesForLevelRetry(world: World): number {
+  return Math.max(0, world.lives - world.livesAwarded);
+}
+
+function awardLife(world: World) {
+  world.lives += 1;
+  world.livesAwarded += 1;
+  world.livesAwardedSinceSnap += 1;
 }
 
 export type CreateOpts = {
@@ -349,8 +384,11 @@ export function createWorld(levelIndex: number, opts: CreateOpts = {}): World {
     snap: emptySnap(),
     secrets: 0,
     secretTotal: pickups.filter((p) => p.kind === "secret").length,
-    coinTotal: pickups.filter((p) => p.kind === "coin").length,
+    coinTotal: countFiniteCoins(level.grid),
     glideSeen: opts.glideSeen ?? false,
+    nextPickupId: nextId,
+    livesAwarded: 0,
+    livesAwardedSinceSnap: 0,
   };
   world.snap = takeSnap(world);
   return world;
@@ -369,8 +407,10 @@ function emptySnap(): Snapshot {
     maxAirJumps: 0,
     time: 0,
     grid: [],
-    pickupTaken: [],
+    pickups: [],
     enemies: [],
+    movers: [],
+    nextPickupId: 1,
   };
 }
 
@@ -388,29 +428,31 @@ export function takeSnap(world: World): Snapshot {
     maxAirJumps: p.maxAirJumps,
     time: world.time,
     grid: world.grid.map((r) => r),
-    pickupTaken: world.pickups.map((it) => it.taken),
-    enemies: world.enemies.map((e) => ({
-      alive: e.alive,
-      x: e.x,
-      y: e.y,
-      vx: e.vx,
-      homeY: e.homeY,
-    })),
+    pickups: world.pickups.map(clonePickup),
+    enemies: world.enemies.map(cloneEnemy),
+    movers: world.movers.map((m) => ({ t: m.t, vx: m.vx, vy: m.vy })),
+    nextPickupId: world.nextPickupId,
   };
 }
 
 export function restoreCheckpoint(world: World): void {
   const s = world.snap;
+  const awarded = world.livesAwardedSinceSnap;
+  world.lives = Math.max(0, world.lives - awarded);
+  world.livesAwarded = Math.max(0, world.livesAwarded - awarded);
+  world.livesAwardedSinceSnap = 0;
+
   const p = world.player;
   p.x = s.x;
   p.y = s.y;
   p.vx = 0;
   p.vy = 0;
   p.facing = s.facing;
-  p.dead = false;
+  p.dead = world.lives <= 0;
   p.grounded = false;
   p.coyote = 0;
   p.buffer = 0;
+  p.jumpHeld = false;
   p.dropTime = 0;
   p.riding = null;
   p.gliding = false;
@@ -419,6 +461,7 @@ export function restoreCheckpoint(world: World): void {
   p.maxAirJumps = s.maxAirJumps;
   p.airJumps = s.maxAirJumps;
   p.squash = 1;
+  p.anim = 0;
   world.hasHoney = s.hasHoney;
   world.score = s.score;
   world.coins = s.coins;
@@ -426,32 +469,27 @@ export function restoreCheckpoint(world: World): void {
   world.secrets = s.secrets;
   world.time = s.time;
   world.grid = s.grid.map((r) => r);
-  world.died = false;
-  world.deathCause = null;
+  world.pickups = s.pickups.map(clonePickup);
+  world.enemies = s.enemies.map(cloneEnemy);
+  world.nextPickupId = s.nextPickupId;
+  for (let i = 0; i < world.movers.length; i++) {
+    const m = world.movers[i]!;
+    const sm = s.movers[i];
+    if (!sm) continue;
+    m.t = sm.t;
+    m.vx = sm.vx;
+    m.vy = sm.vy;
+  }
+  world.died = world.lives <= 0;
+  world.deathCause = world.lives <= 0 ? (world.deathCause ?? "hit") : null;
   world.won = false;
   world.spawnProtect = SPAWN_PROTECT;
   world.hitstop = 0;
   world.trauma = 0;
   world.particles = [];
+  world.bumps = [];
   world.toast = "";
   world.toastT = 0;
-  for (let i = 0; i < world.pickups.length; i++) {
-    const item = world.pickups[i]!;
-    item.taken = s.pickupTaken[i] ?? item.taken;
-    item.pop = 0;
-    item.vy = 0;
-  }
-  for (let i = 0; i < world.enemies.length; i++) {
-    const e = world.enemies[i]!;
-    const se = s.enemies[i];
-    if (!se) continue;
-    e.alive = se.alive;
-    e.x = se.x;
-    e.y = se.y;
-    e.vx = se.vx;
-    e.homeY = se.homeY;
-    e.squish = 0;
-  }
   world.cameraX = p.x - 120;
   world.cameraY = p.y - 180;
 }
@@ -596,7 +634,7 @@ function hitBlock(world: World, t: { tx: number; ty: number; ch: string }) {
   if (t.ch === "!") {
     world.pickups.push({
       kind: "honey",
-      id: Date.now(),
+      id: world.nextPickupId++,
       x: t.tx * TILE + 6,
       y: t.ty * TILE - 24,
       w: 20,
@@ -609,7 +647,7 @@ function hitBlock(world: World, t: { tx: number; ty: number; ch: string }) {
   } else if (t.ch === "U") {
     world.pickups.push({
       kind: "life",
-      id: Date.now(),
+      id: world.nextPickupId++,
       x: t.tx * TILE + 6,
       y: t.ty * TILE - 24,
       w: 20,
@@ -622,7 +660,7 @@ function hitBlock(world: World, t: { tx: number; ty: number; ch: string }) {
   } else {
     world.pickups.push({
       kind: "coin",
-      id: Date.now(),
+      id: world.nextPickupId++,
       x: t.tx * TILE + 8,
       y: t.ty * TILE - 20,
       w: 16,
@@ -633,6 +671,11 @@ function hitBlock(world: World, t: { tx: number; ty: number; ch: string }) {
       pop: 0.28,
     });
   }
+}
+
+export function bumpTile(world: World, tx: number, ty: number) {
+  const ch = cell(world.grid, tx, ty);
+  hitBlock(world, { tx, ty, ch });
 }
 
 function collectPickup(world: World, p: Pickup, events: SimEvents) {
@@ -647,7 +690,7 @@ function collectPickup(world: World, p: Pickup, events: SimEvents) {
     events.coin = true;
     if (world.coinBank >= COIN_LIFE) {
       world.coinBank -= COIN_LIFE;
-      world.lives += 1;
+      awardLife(world);
       popText(world, p.x, p.y - 12, "1UP");
       events.power = true;
     }
@@ -670,7 +713,7 @@ function collectPickup(world: World, p: Pickup, events: SimEvents) {
     burst(world, p.x + 8, p.y + 8, "leaf", 10);
     events.secret = true;
   } else {
-    world.lives += 1;
+    awardLife(world);
     popText(world, p.x, p.y, "1UP");
     events.power = true;
   }
@@ -754,6 +797,9 @@ function hurtPlayer(world: World, events: SimEvents) {
 export function stepWorld(world: World, dt: number, actions: Actions, events: SimEvents) {
   if (world.hitstop > 0) {
     world.hitstop -= dt;
+    if (actions.jumpPressed && !world.player.dead && !world.won) {
+      world.player.buffer = JUMP_BUFFER;
+    }
     return;
   }
   if (world.toastT > 0) world.toastT = Math.max(0, world.toastT - dt);
@@ -931,18 +977,6 @@ export function stepWorld(world: World, dt: number, actions: Actions, events: Si
   if (hazard && p.invuln <= 0) hurtPlayer(world, events);
   if (p.y > world.h * TILE + 40) killPlayer(world, events, "fall");
 
-  for (const cp of world.checkpoints) {
-    if (cp.armed) continue;
-    if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, cp.x - 14, cp.y - 48, 28, 52)) {
-      cp.armed = true;
-      world.snap = takeSnap(world);
-      world.toast = "已记录";
-      world.toastT = 1.5;
-      events.checkpoint = true;
-      burst(world, cp.x, cp.y - 28, "leaf", 8);
-    }
-  }
-
   for (const e of world.enemies) {
     if (!e.alive) {
       e.squish += dt;
@@ -957,19 +991,25 @@ export function stepWorld(world: World, dt: number, actions: Actions, events: Si
     } else {
       e.x += e.vx * dt;
       e.vy = Math.min(MAX_FALL, e.vy + GRAVITY_DOWN * dt);
+      const prevBottom = e.y + e.h;
+      e.y += e.vy * dt;
       const eb = { x: e.x, y: e.y, w: e.w, h: e.h };
-      const r = resolveAxis(world, eb, 0, e.vy, "y", e.y + e.h, false);
+      const r = resolveAxis(world, eb, 0, e.vy, "y", prevBottom, false);
+      e.y = eb.y;
       if (r.grounded) {
-        e.y = eb.y;
         e.vy = 0;
-      } else e.y = eb.y;
-      const footX = e.vx > 0 ? e.x + e.w + 1 : e.x - 1;
-      const footY = e.y + e.h + 2;
-      const groundAhead =
-        isSolid(cell(world.grid, Math.floor(footX / TILE), Math.floor(footY / TILE))) ||
-        ONEWAY.has(cell(world.grid, Math.floor(footX / TILE), Math.floor(footY / TILE)));
-      const wall = isSolid(cell(world.grid, Math.floor(footX / TILE), Math.floor((e.y + e.h / 2) / TILE)));
-      if (wall || !groundAhead) e.vx *= -1;
+        const footX = e.vx > 0 ? e.x + e.w + 1 : e.x - 1;
+        const footY = e.y + e.h + 2;
+        const groundAhead =
+          isSolid(cell(world.grid, Math.floor(footX / TILE), Math.floor(footY / TILE))) ||
+          ONEWAY.has(cell(world.grid, Math.floor(footX / TILE), Math.floor(footY / TILE)));
+        const wall = isSolid(cell(world.grid, Math.floor(footX / TILE), Math.floor((e.y + e.h / 2) / TILE)));
+        if (wall || !groundAhead) e.vx *= -1;
+      } else {
+        const aheadX = e.vx > 0 ? e.x + e.w + 2 : e.x - 2;
+        const wall = isSolid(cell(world.grid, Math.floor(aheadX / TILE), Math.floor((e.y + e.h / 2) / TILE)));
+        if (wall) e.vx *= -1;
+      }
     }
 
     if (p.invuln > 0 || p.dead || world.died) continue;
@@ -990,27 +1030,42 @@ export function stepWorld(world: World, dt: number, actions: Actions, events: Si
     }
   }
 
-  for (const item of world.pickups) {
-    if (item.taken) continue;
-    if (item.pop > 0) {
-      item.pop -= dt;
-      item.y += item.vy * dt;
-      item.vy += GRAVITY_DOWN * dt * 0.6;
+  if (!(p.dead || world.died || world.won)) {
+    for (const cp of world.checkpoints) {
+      if (cp.armed) continue;
+      if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, cp.x - 14, cp.y - 48, 28, 52)) {
+        cp.armed = true;
+        world.snap = takeSnap(world);
+        world.livesAwardedSinceSnap = 0;
+        world.toast = "已记录";
+        world.toastT = 1.5;
+        events.checkpoint = true;
+        burst(world, cp.x, cp.y - 28, "leaf", 8);
+      }
     }
-    if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, item.x, item.y, item.w, item.h)) {
-      collectPickup(world, item, events);
+
+    for (const item of world.pickups) {
+      if (item.taken) continue;
+      if (item.pop > 0) {
+        item.pop -= dt;
+        item.y += item.vy * dt;
+        item.vy += GRAVITY_DOWN * dt * 0.6;
+      }
+      if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, item.x, item.y, item.w, item.h)) {
+        collectPickup(world, item, events);
+      }
+    }
+
+    if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, world.goalX, world.goalY, 28, 64)) {
+      world.won = true;
+      const bonus = Math.floor(world.time) * 10;
+      world.score += 1000 + bonus;
+      popText(world, p.x, p.y - 10, "FINISH");
+      events.win = true;
     }
   }
 
-  if (aabb(p.x, p.y, PLAYER_W, PLAYER_H, world.goalX, world.goalY, 28, 64)) {
-    world.won = true;
-    const bonus = Math.floor(world.time) * 10;
-    world.score += 1000 + bonus;
-    popText(world, p.x, p.y - 10, "FINISH");
-    events.win = true;
-  }
-
-  if (Math.random() < dt * 1.4) {
+  if (!prefersReducedMotion() && Math.random() < dt * 0.35) {
     emit(world, {
       x: p.x + (Math.random() * 220 - 40),
       y: p.y - 40 - Math.random() * 80,

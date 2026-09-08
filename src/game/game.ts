@@ -3,10 +3,13 @@ import { GameAudio } from "./audio";
 import { FIXED_DT, MAX_PHYS_STEPS, RESPAWN_DELAY, START_LIVES, VIEW_H, VIEW_W } from "./const";
 import { Input } from "./input";
 import { LEVELS } from "./levels";
+import { StartupGuard, phaseAfterPauseInput } from "./lifecycle";
+import { prefersReducedMotion } from "./motion";
 import {
   cameraStep,
   createWorld,
   emptyEvents,
+  livesForLevelRetry,
   restoreCheckpoint,
   stepWorld,
   type World,
@@ -53,6 +56,7 @@ export class LeapGame {
   runScore0 = 0;
   runBank0 = 0;
   detachRo: (() => void) | null = null;
+  private bootGuard = new StartupGuard();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -63,6 +67,7 @@ export class LeapGame {
   }
 
   async boot() {
+    const { stale } = this.bootGuard.begin();
     const save = loadSave();
     useGameUI.setState({
       loading: true,
@@ -75,15 +80,19 @@ export class LeapGame {
     });
     this.audio.setMuted(save.muted);
     try {
-      this.images = await loadAssets();
+      const images = await loadAssets();
+      if (stale()) return;
+      this.images = images;
       useGameUI.setState({ loading: false, phase: "title" });
     } catch (err) {
+      if (stale()) return;
       useGameUI.setState({
         loading: false,
         loadError: err instanceof Error ? err.message : "素材加载失败",
       });
       return;
     }
+    if (stale()) return;
     this.input.attach(window);
     this.installProbe();
     this.running = true;
@@ -101,11 +110,13 @@ export class LeapGame {
   }
 
   destroy() {
+    this.bootGuard.cancel();
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.input.detach();
     this.audio.destroy();
     this.detachRo?.();
+    this.detachRo = null;
     document.removeEventListener("visibilitychange", this.onVis);
     window.removeEventListener("resize", this.onResize);
     if (window.__controlsTest) delete window.__controlsTest;
@@ -124,18 +135,20 @@ export class LeapGame {
   private onResize = () => this.resize();
 
   resize() {
-    const parent = this.canvas.parentElement;
-    const cssW = parent?.clientWidth || VIEW_W;
-    const cssH = parent?.clientHeight || VIEW_H;
-    const scale = Math.min(cssW / VIEW_W, cssH / VIEW_H);
-    const w = Math.max(1, Math.floor(VIEW_W * scale));
-    const h = Math.max(1, Math.floor(VIEW_H * scale));
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.canvas.style.width = `${w}px`;
-    this.canvas.style.height = `${h}px`;
+    this.canvas.style.width = "100%";
+    this.canvas.style.height = "100%";
     this.canvas.width = Math.floor(VIEW_W * this.dpr);
     this.canvas.height = Math.floor(VIEW_H * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+  }
+
+  pauseFromResize() {
+    if (useGameUI.getState().phase === "playing") {
+      this.audio.suspendMusic();
+      this.input.resetHeld();
+      this.syncUI("paused");
+    }
   }
 
   unlockAudio() {
@@ -161,16 +174,19 @@ export class LeapGame {
     this.unlockAudio();
     this.input.resetHeld();
     const w = this.world;
-    const lives = w && w.lives > 0 ? w.lives : START_LIVES;
-    const score = w && w.lives > 0 ? this.runScore0 : 0;
-    const bank = w && w.lives > 0 ? this.runBank0 : 0;
+    const rolled = w ? livesForLevelRetry(w) : START_LIVES;
+    const gameOver = !w || w.lives <= 0 || rolled <= 0;
     this.world = createWorld(this.levelIndex, {
-      lives: w?.lives === 0 ? START_LIVES : lives,
-      score: w?.lives === 0 ? 0 : score,
-      coinBank: w?.lives === 0 ? 0 : bank,
+      lives: gameOver ? START_LIVES : rolled,
+      score: gameOver ? 0 : this.runScore0,
+      coinBank: gameOver ? 0 : this.runBank0,
       honeySeen: w?.honeySeen,
       glideSeen: w?.glideSeen,
     });
+    if (gameOver) {
+      this.runScore0 = 0;
+      this.runBank0 = 0;
+    }
     this.deathTimer = 0;
     this.audio.setMusic(true, this.levelIndex);
     this.syncUI("playing");
@@ -185,6 +201,11 @@ export class LeapGame {
     }
     restoreCheckpoint(this.world);
     this.deathTimer = 0;
+    if (this.world.lives <= 0) {
+      this.audio.setMusic(false);
+      this.syncUI("dead");
+      return;
+    }
     this.audio.setMusic(true, this.levelIndex);
     this.syncUI("playing");
   }
@@ -325,12 +346,11 @@ export class LeapGame {
     this.frameDt = dt;
     this.titleTime += dt;
 
-    const phase = useGameUI.getState().phase;
     const held = this.input.pollHeld();
     const pausePressed = this.input.consumePause();
-
-    if (phase === "playing" && pausePressed) this.togglePause();
-    else if (phase === "paused" && pausePressed) this.togglePause();
+    const prior = useGameUI.getState().phase;
+    const phase = phaseAfterPauseInput(prior, pausePressed);
+    if (phase !== prior) this.togglePause();
 
     if (phase === "playing") this.audio.tick(dt);
 
@@ -414,7 +434,7 @@ export class LeapGame {
       this.frameDt,
       VIEW_W,
       VIEW_H,
-      useGameUI.getState().shake && phase === "playing",
+      useGameUI.getState().shake && phase === "playing" && !prefersReducedMotion(),
     );
     renderWorld(ctx, this.world, this.images, shake, t);
   }
