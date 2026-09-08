@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #fff3db;
+  --color-paper-deep: #f3e4c8;
+  --color-ink: #49372c;
+  --color-ink-muted: #6b5344;
+  --color-leaf: #3d674a;
+  --color-leaf-deep: #2a4b35;
+  --color-apricot: #e99a52;
+  --color-ginkgo: #e9bc4a;
+  --color-sky: #7ec8e8;
+  --color-danger: #b94e45;
+  --color-dusk: #756b97;
+  --color-hud: color-mix(in oklab, #49372c 74%, transparent);
+  --font-display: "ZCOOL KuaiLe", "Noto Sans SC", "Segoe UI", sans-serif;
+  --font-sans: "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+  --text-display: clamp(2.5rem, 8vw, 4.5rem);
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  html,
+  body {
+    margin: 0;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    overflow: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
