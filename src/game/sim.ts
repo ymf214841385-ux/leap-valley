@@ -695,8 +695,10 @@ function collectPickup(world: World, p: Pickup, events: SimEvents) {
       events.power = true;
     }
   } else if (p.kind === "honey") {
+    const gained = !world.hasHoney && world.player.maxAirJumps < 1;
     world.hasHoney = true;
     world.player.maxAirJumps = 1;
+    if (gained) world.player.airJumps = Math.max(world.player.airJumps, 1);
     world.score += 500;
     popText(world, p.x, p.y, "二段跳");
     burst(world, p.x + 8, p.y + 8, "spark", 10);
@@ -907,15 +909,18 @@ export function stepWorld(world: World, dt: number, actions: Actions, events: Si
   const moveX = p.vx * dt;
   const moveY = p.vy * dt;
   const steps = Math.max(1, Math.ceil(Math.max(Math.abs(moveX), Math.abs(moveY)) / 8));
-  const sx = moveX / steps;
-  const sy = moveY / steps;
+  let sx = moveX / steps;
+  let sy = moveY / steps;
   const body = { x: p.x, y: p.y, w: PLAYER_W, h: PLAYER_H };
   let hazard = false;
 
   for (let i = 0; i < steps; i++) {
     body.x += sx;
     const rx = resolveAxis(world, body, p.vx, 0, "x", prevBottom, p.dropTime > 0);
-    if (rx.hit) p.vx = 0;
+    if (rx.hit) {
+      p.vx = 0;
+      sx = 0;
+    }
     if (rx.hazard) hazard = true;
 
     body.y += sy;
@@ -934,8 +939,10 @@ export function stepWorld(world: World, dt: number, actions: Actions, events: Si
       if (ry.grounded) {
         p.grounded = true;
         p.vy = 0;
+        sy = 0;
       } else if (p.vy < 0) {
         p.vy = 0;
+        sy = 0;
       }
     }
     if (ry.hazard) hazard = true;

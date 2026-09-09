@@ -15,7 +15,7 @@ import {
   type World,
 } from "./sim";
 import { renderTitleIdle, renderWorld } from "./render";
-import { loadSave, writeSave } from "./save";
+import { levelClearScore, loadSave, recordLevelBest, writeSave } from "./save";
 import { useGameUI, type Phase } from "./store";
 
 export type ControlsProbe = {
@@ -397,7 +397,11 @@ export class LeapGame {
         this.audio.setMusic(false);
         const save = loadSave();
         save.unlocked = Math.max(save.unlocked, Math.min(3, this.levelIndex + 2));
-        save.best[this.levelIndex] = Math.max(save.best[this.levelIndex] ?? 0, this.world.score);
+        save.best = recordLevelBest(
+          save.best,
+          this.levelIndex,
+          levelClearScore(this.world.score, this.runScore0),
+        );
         writeSave(save);
         this.syncUI(this.levelIndex >= LEVELS.length - 1 ? "win" : "clear");
       } else {
