@@ -48,3 +48,14 @@ export function writeSave(data: SaveData): void {
     /* private mode / quota */
   }
 }
+
+/** Score stored as a single-level best: this level's points, not the run total. */
+export function levelClearScore(cumulativeScore: number, scoreAtLevelStart: number): number {
+  return Math.max(0, cumulativeScore - scoreAtLevelStart);
+}
+
+export function recordLevelBest(best: number[], levelIndex: number, clearScore: number): number[] {
+  const next = best.slice();
+  next[levelIndex] = Math.max(next[levelIndex] ?? 0, Math.max(0, clearScore));
+  return next;
+}

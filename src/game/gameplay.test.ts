@@ -12,6 +12,7 @@ import {
 import { LEVELS } from "./levels";
 import { Input } from "./input";
 import type { Actions } from "./input";
+import { MAX_FALL, MAX_SPEED, PLAYER_H, PLAYER_W, TILE } from "./const";
 
 export const tests: Array<[string, () => void]> = [];
 
@@ -276,4 +277,174 @@ test("stable unique ids for box rewards", () => {
   const spawned = w.pickups.filter((p) => p.id >= w.snap.nextPickupId);
   eq(spawned.length, 2, "two rewards");
   assert(spawned[0]!.id !== spawned[1]!.id, "unique ids");
+});
+
+test("high-speed fall leftover substeps do not pass through plank", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  const plankTx = 28;
+  const plankTy = 11;
+  const plankTop = plankTy * TILE + 10;
+  p.x = plankTx * TILE + (TILE - 18) / 2;
+  p.y = plankTop - PLAYER_H - 6;
+  p.vx = 0;
+  p.vy = MAX_FALL;
+  p.grounded = false;
+  p.coyote = 0;
+  p.dropTime = 0;
+  p.invuln = 1;
+  w.spawnProtect = 1;
+  for (let i = 0; i < 18; i++) step(w);
+  const feet = p.y + PLAYER_H;
+  assert(feet <= plankTop + 1.5, `tunneled through plank: feet ${feet} top ${plankTop} y=${p.y}`);
+  assert(p.grounded, "should land on plank");
+  assert(!p.dead, "should not fall to death");
+});
+
+test("airborne honey grants double jump immediately", () => {
+  const w = createWorld(0);
+  const honey = w.pickups.find((it) => it.kind === "honey" && !it.taken);
+  assert(honey, "missing honey");
+  honey.x = 200;
+  honey.y = 180;
+  const p = w.player;
+  Object.assign(p, {
+    x: honey.x,
+    y: honey.y,
+    vx: 0,
+    vy: 80,
+    grounded: false,
+    coyote: 0,
+    buffer: 0,
+    airJumps: 0,
+    maxAirJumps: 0,
+    jumpHeld: false,
+    gliding: false,
+    dropTime: 0,
+  });
+  w.hasHoney = false;
+  step(w);
+  assert(honey.taken, "honey collected");
+  eq(w.hasHoney, true, "has honey");
+  eq(p.maxAirJumps, 1, "max air jumps");
+  p.grounded = false;
+  p.coyote = 0;
+  p.buffer = 0;
+  p.vy = 60;
+  const ev = step(w, { ...idle, jumpPressed: true, jumpHeld: true });
+  eq(ev.jump, true, "air jump available the moment honey is collected");
+});
+
+test("repeat honey does not refill a spent air jump", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  w.hasHoney = true;
+  p.maxAirJumps = 1;
+  p.airJumps = 0;
+  const extra = {
+    kind: "honey" as const,
+    id: w.nextPickupId++,
+    x: 200,
+    y: 180,
+    w: 20,
+    h: 24,
+    vx: 0,
+    vy: 0,
+    taken: false,
+    pop: 0,
+  };
+  w.pickups.push(extra);
+  Object.assign(p, {
+    x: extra.x,
+    y: extra.y,
+    vx: 0,
+    vy: 40,
+    grounded: false,
+    coyote: 0,
+    buffer: 0,
+    jumpHeld: false,
+    gliding: false,
+    dropTime: 0,
+  });
+  step(w);
+  assert(extra.taken, "repeat honey collected");
+  eq(p.maxAirJumps, 1, "max stays 1");
+  eq(p.airJumps, 0, "spent air jump not refilled");
+  p.grounded = false;
+  p.coyote = 0;
+  p.buffer = 0;
+  p.vy = 40;
+  const ev = step(w, { ...idle, jumpPressed: true, jumpHeld: true });
+  eq(ev.jump, false, "no extra air jump from repeat honey");
+});
+
+test("checkpoint restore keeps snap honey air jumps", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  w.hasHoney = true;
+  p.maxAirJumps = 1;
+  p.airJumps = 1;
+  w.snap = takeSnap(w);
+  p.airJumps = 0;
+  p.maxAirJumps = 0;
+  w.hasHoney = false;
+  restoreCheckpoint(w);
+  eq(w.hasHoney, true, "honey restored");
+  eq(p.maxAirJumps, 1, "max restored");
+  eq(p.airJumps, 1, "air jumps restored to snap max");
+});
+
+test("checkpoint restore drops honey collected after snap", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  w.snap = takeSnap(w);
+  w.hasHoney = true;
+  p.maxAirJumps = 1;
+  p.airJumps = 1;
+  restoreCheckpoint(w);
+  eq(w.hasHoney, false, "post-snap honey rolled back");
+  eq(p.maxAirJumps, 0, "max rolled back");
+  eq(p.airJumps, 0, "air jumps rolled back");
+});
+
+test("high-speed ceiling leftover substeps do not pass through", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  const tx = 22;
+  const ty = 9;
+  const tileBottom = (ty + 1) * TILE;
+  p.x = tx * TILE + (TILE - PLAYER_W) / 2;
+  p.y = tileBottom + 4;
+  p.vx = 0;
+  p.vy = -MAX_FALL;
+  p.grounded = false;
+  p.coyote = 0;
+  p.dropTime = 0;
+  p.invuln = 1;
+  w.spawnProtect = 1;
+  for (let i = 0; i < 10; i++) step(w);
+  assert(p.y + 0.5 >= tileBottom, `went through ceiling: y=${p.y} bottom=${tileBottom}`);
+  assert(p.y <= tileBottom + PLAYER_H, `fell away from ceiling: y=${p.y}`);
+  assert(!p.dead, "should not die");
+});
+
+test("high-speed wall leftover substeps do not pass through", () => {
+  const w = createWorld(0);
+  const p = w.player;
+  const tx = 18;
+  const ty = 10;
+  const tileX = tx * TILE;
+  p.x = tileX - PLAYER_W - 2;
+  p.y = ty * TILE + 6;
+  p.vx = MAX_SPEED;
+  p.vy = 0;
+  p.grounded = false;
+  p.coyote = 0;
+  p.dropTime = 0;
+  p.invuln = 1;
+  w.spawnProtect = 1;
+  const ev = emptyEvents();
+  stepWorld(w, 0.08, { ...idle, moveX: 1 }, ev);
+  assert(p.x + PLAYER_W <= tileX + 0.5, `went into/through wall: right=${p.x + PLAYER_W} wall=${tileX}`);
+  eq(p.vx, 0, "horizontal leftover cancelled");
 });

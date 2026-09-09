@@ -29,23 +29,49 @@ const GAME_KEYS = new Set([
   "KeyK",
 ]);
 
+const JUMP_KEYS = new Set(["Space", "KeyZ", "KeyW", "ArrowUp"]);
+const PAUSE_KEYS = new Set(["Escape", "KeyP"]);
+
+function setHas(codes: Set<string>, keys: Set<string>) {
+  for (const code of keys) {
+    if (codes.has(code)) return true;
+  }
+  return false;
+}
+
 export class Input {
   keys = new Set<string>();
   injected = new Set<string>();
   touchLeft = false;
   touchRight = false;
-  touchJump = false;
   touchDown = false;
+  private _touchJump = false;
   private jumpQueued = false;
   private pauseQueued = false;
   private jumpWasHeld = false;
   private pauseWasHeld = false;
   private unsub: Array<() => void> = [];
 
+  get touchJump() {
+    return this._touchJump;
+  }
+
+  set touchJump(v: boolean) {
+    if (v && !this._touchJump) this.jumpQueued = true;
+    this._touchJump = v;
+  }
+
   attach(target: HTMLElement | Window = window) {
     const el = target as Window;
     const down = (e: KeyboardEvent) => {
       if (GAME_KEYS.has(e.code)) e.preventDefault();
+      if (!e.repeat) {
+        if (JUMP_KEYS.has(e.code)) this.jumpQueued = true;
+        if (PAUSE_KEYS.has(e.code)) this.pauseQueued = true;
+      } else {
+        if (JUMP_KEYS.has(e.code)) this.jumpWasHeld = true;
+        if (PAUSE_KEYS.has(e.code)) this.pauseWasHeld = true;
+      }
       this.keys.add(e.code);
     };
     const up = (e: KeyboardEvent) => {
@@ -74,7 +100,14 @@ export class Input {
   }
 
   setKeys(codes: string[]) {
-    this.injected = new Set(codes);
+    const next = new Set(codes);
+    if (setHas(next, JUMP_KEYS) && !setHas(this.injected, JUMP_KEYS) && !setHas(this.keys, JUMP_KEYS) && !this._touchJump) {
+      this.jumpQueued = true;
+    }
+    if (setHas(next, PAUSE_KEYS) && !setHas(this.injected, PAUSE_KEYS) && !setHas(this.keys, PAUSE_KEYS)) {
+      this.pauseQueued = true;
+    }
+    this.injected = next;
   }
 
   resetHeld() {
@@ -82,12 +115,10 @@ export class Input {
     this.injected = new Set();
     this.touchLeft = false;
     this.touchRight = false;
-    this.touchJump = false;
+    this._touchJump = false;
     this.touchDown = false;
     this.jumpQueued = false;
     this.pauseQueued = false;
-    this.jumpWasHeld = false;
-    this.pauseWasHeld = false;
   }
 
   pollHeld(): HeldActions {

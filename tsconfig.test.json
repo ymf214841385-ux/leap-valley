@@ -8,7 +8,7 @@
     "strict": true,
     "skipLibCheck": true,
     "rootDir": "src/game",
-    "outDir": "/tmp/leap-valley-tests",
+    "outDir": "node_modules/.cache/leap-valley-tests",
     "types": []
   },
   "include": [
@@ -18,8 +18,16 @@
     "src/game/input.ts",
     "src/game/lifecycle.ts",
     "src/game/motion.ts",
+    "src/game/save.ts",
+    "src/game/store.ts",
+    "src/game/assets.ts",
+    "src/game/audio.ts",
+    "src/game/render.ts",
+    "src/game/game.ts",
     "src/game/gameplay.test.ts",
     "src/game/input.test.ts",
-    "src/game/lifecycle.test.ts"
+    "src/game/lifecycle.test.ts",
+    "src/game/save.test.ts",
+    "src/game/game.test.ts"
   ]
 }
